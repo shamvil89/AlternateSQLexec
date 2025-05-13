@@ -1,0 +1,35 @@
+.sql-editor {
+    height: 200px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+.message-area {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 4px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.error-message {
+    color: #dc3545;
+}
+
+.success-message {
+    color: #198754;
+}
+
+.table-responsive {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.btn-group {
+    gap: 5px;
+}
+
+.card {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+} 

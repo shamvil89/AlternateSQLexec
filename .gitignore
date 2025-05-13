@@ -1,0 +1,76 @@
+# IDE and Editor files
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules/
+packages/
+
+# Build outputs
+dist/
+build/
+out/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# PowerShell
+*.ps1.credentials
+*.pfx
+*.cer
+
+# SQL Server
+*.mdf
+*.ldf
+*.ndf
+
+# Windows specific
+Thumbs.db
+Desktop.ini
+
+# SSL/TLS Certificates
+*.pem
+*.key
+*.crt
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Visual Studio Code
+*.code-workspace
+
+# Backup files
+*.bak
+*.backup
+
+# User-specific files
+*.userprefs
+
+# Debug files
+*.debug
+*.pdb
+
+# Test files
+test-results/
+coverage/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db 

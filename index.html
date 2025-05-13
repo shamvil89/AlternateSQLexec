@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Query Executor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+    <style>
+        #editor {
+            height: 200px;
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .message-area {
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+        }
+        .sql-editor {
+            margin-bottom: 1rem;
+            position: relative;
+        }
+        .error-message {
+            color: #dc3545;
+        }
+        .success-message {
+            color: #198754;
+        }
+        .print-message {
+            color: #0d6efd;
+            font-weight: normal;
+        }
+        .message-area div {
+            margin-bottom: 4px;
+            font-family: monospace;
+        }
+        #planArea {
+            max-height: 500px;
+            overflow-y: auto;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            font-size: 12px;
+        }
+        .plan-actions {
+            margin-top: 10px;
+            padding: 10px;
+            border-top: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="mb-4">SQL Query Executor</h1>
+        
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="serverName" class="form-label">SQL Server Name:</label>
+                    <input type="text" class="form-control" id="serverName" placeholder="Enter server name">
+                    <small id="environmentInfo" class="form-text"></small>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="editor" class="form-label">T-SQL Query:</label>
+                    <div id="editor" class="sql-editor"></div>
+                </div>
+
+                <div class="btn-group mb-3">
+                    <button class="btn btn-primary" onclick="validateAndExecute()">Execute</button>
+                    <button class="btn btn-secondary" onclick="validateAndParse()">Parse</button>
+                    <button class="btn btn-info" onclick="validateAndGetPlan()">Execution Plan</button>
+                </div>
+
+                <div id="environmentWarning" class="alert alert-danger d-none">
+                    <strong>Warning!</strong> This is a Production instance. Query execution is not allowed.
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <ul class="nav nav-tabs card-header-tabs" role="tablist">
+                    <li class="nav-item">
+                        <a class="nav-link active" data-bs-toggle="tab" href="#results">Results</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#messages">Messages</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#plan">Execution Plan</a>
+                    </li>
+                </ul>
+            </div>
+            <div class="card-body">
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="results">
+                        <div id="resultTable" class="table-responsive"></div>
+                    </div>
+                    <div class="tab-pane fade" id="messages">
+                        <pre id="messageArea" class="message-area"></pre>
+                    </div>
+                    <div class="tab-pane fade" id="plan" role="tabpanel">
+                        <div class="mb-3">
+                            <button id="parseXmlBtn" class="btn btn-info" onclick="parseAndFormatXml()">Parse XML</button>
+                            <button id="copyXmlBtn" class="btn btn-secondary" onclick="copyPlanToClipboard()">Copy XML</button>
+                            <button id="pasteThePlanBtn" class="btn btn-primary" onclick="openInPasteThePlan()">Open in Paste The Plan</button>
+                        </div>
+                        <pre id="planArea" class="execution-plan"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.23.0/ace.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.23.0/ext-language_tools.js"></script>
+    <script src="script.js"></script>
+</body>
+</html> 
