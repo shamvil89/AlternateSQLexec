@@ -258,7 +258,7 @@ try {
             $serverName = $instanceParts[0]
             $instanceName = if ($instanceParts.Count -gt 1) { $instanceParts[1] } else { $serverName }
 
-            # Query the inventory database using the view
+            # First try with fully qualified name
             $query = @"
             SELECT TOP 1 EnvironmentName
             FROM $($script:config.InventoryDatabase).dbo.vw_InstanceOverview
@@ -278,7 +278,30 @@ try {
                 $connectionParams.Password = $script:config.SqlPassword
             }
             
-            $result = Invoke-Sqlcmd @connectionParams
+            try {
+                $result = Invoke-Sqlcmd @connectionParams
+            }
+            catch {
+                # Check if it's the specific version compatibility error
+                if ($_.Exception.Message -match "Reference to database and/or server name .* is not supported in this version" -or
+                    $_.Exception.Message -match "Msg 40515") {
+                    Write-Host "Detected SQL Server version compatibility issue, retrying with modified query..." -ForegroundColor Yellow
+                    
+                    # Switch to current database and try without database qualification
+                    $connectionParams.Database = $script:config.InventoryDatabase
+                    $query = @"
+                    SELECT TOP 1 EnvironmentName
+                    FROM dbo.vw_InstanceOverview
+                    WHERE ServerName = '$instanceName'
+"@
+                    $connectionParams.Query = $query
+                    $result = Invoke-Sqlcmd @connectionParams
+                }
+                else {
+                    # If it's a different error, rethrow it
+                    throw
+                }
+            }
             
             if ($result) {
                 return @{
@@ -291,8 +314,9 @@ try {
             }
         }
         catch {
+            Write-Host "Error in Get-InstanceEnvironment: $($_.Exception.Message)" -ForegroundColor Red
             return @{
-                error = $_.Exception.Message
+                error = "Failed to get environment info: $($_.Exception.Message)"
             }
         }
     }
