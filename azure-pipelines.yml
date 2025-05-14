@@ -1,92 +1,102 @@
 trigger:
   - main
 
-pool:
-  vmImage: 'windows-latest'
-
 parameters:
-  - name: operation
-    type: string
-    default: 'Backup'
-    values:
-      - Backup
-      - Restore
-  - name: environmentName
+  - name: environment
+    displayName: 'Target Environment'
     type: string
     default: 'Development'
     values:
       - Development
       - Staging
       - Production
-  - name: backupType
-    type: string
-    default: 'Full'
-    values:
-      - Full
-      - Differential
-      - Log
-  
+
 variables:
-  - name: SqlServerInstance
-    ${{ if eq(parameters.environmentName, 'Development') }}:
-      value: 'dev-sql-server.database.windows.net'
-    ${{ if eq(parameters.environmentName, 'Staging') }}:
-      value: 'stage-sql-server.database.windows.net'
-    ${{ if eq(parameters.environmentName, 'Production') }}:
-      value: 'prod-sql-server.database.windows.net'
+  - name: sourceInstance
+    ${{ if eq(parameters.environment, 'Development') }}:
+      value: 'DEV-SQL-SERVER'
+    ${{ if eq(parameters.environment, 'Staging') }}:
+      value: 'STG-SQL-SERVER'
+    ${{ if eq(parameters.environment, 'Production') }}:
+      value: 'PROD-SQL-SERVER'
+  
+  - name: targetInstance
+    ${{ if eq(parameters.environment, 'Development') }}:
+      value: 'DEV-SQL-SERVER'
+    ${{ if eq(parameters.environment, 'Staging') }}:
+      value: 'STG-SQL-SERVER'
+    ${{ if eq(parameters.environment, 'Production') }}:
+      value: 'PROD-SQL-SERVER'
 
-steps:
-- ${{ if eq(parameters.operation, 'Restore') }}:
-  - task: DownloadPipelineArtifact@2
-    inputs:
-      artifactName: 'DatabaseBackup'
-      targetPath: '$(Build.ArtifactStagingDirectory)'
+pool:
+  vmImage: 'windows-latest'
 
-- task: PowerShell@2
-  inputs:
-    targetType: 'inline'
-    script: |
-      # Convert plain text password to SecureString
-      $securePassword = ConvertTo-SecureString "$(SqlPassword)" -AsPlainText -Force
-      
-      # Set common parameters
-      $params = @{
-        Operation = "${{ parameters.operation }}"
-        DatabaseName = "$(DatabaseName)"
-        ServerInstance = "$(SqlServerInstance)"
-        SqlUsername = "$(SqlUsername)"
-        SqlPassword = $securePassword
-        CommandTimeout = 7200
-      }
+stages:
+- stage: ValidateInput
+  jobs:
+  - job: Validation
+    steps:
+    - task: PowerShell@2
+      name: ValidateParameters
+      inputs:
+        targetType: 'inline'
+        script: |
+          # Add validation logic here
+          if ("$(SourceDatabaseName)" -eq "" -or "$(TargetDatabaseName)" -eq "") {
+            Write-Error "Database names cannot be empty"
+            exit 1
+          }
 
-      # Add operation-specific parameters
-      if ("${{ parameters.operation }}" -eq "Backup") {
-        $params.BackupType = "${{ parameters.backupType }}"
-        $params.DataFilePath = "$(Build.ArtifactStagingDirectory)"
-        $params.Description = "Pipeline backup from ${{ parameters.environmentName }} environment"
-      }
-      else {
-        $params.BackupFile = "$(Build.ArtifactStagingDirectory)/database.bak"
-        $params.DataFilePath = "$(Build.ArtifactStagingDirectory)/Data"
-        $params.LogFilePath = "$(Build.ArtifactStagingDirectory)/Log"
-        $params.OverwriteExisting = $true
-      }
-      
-      # Execute the script with parameters
-      & "$(System.DefaultWorkingDirectory)/RestoreDatabaseViaPipeline.ps1" @params
-      
-      if ($LASTEXITCODE -ne 0) {
-        Write-Error "Database operation failed with exit code $LASTEXITCODE"
-        exit $LASTEXITCODE
-      }
-  env:
-    SqlPassword: $(SqlPassword) # Secure way to pass password
-  displayName: '${{ parameters.operation }} Database'
-  condition: succeeded()
+- stage: DatabaseRefresh
+  dependsOn: ValidateInput
+  condition: succeeded('ValidateInput')
+  jobs:
+  - deployment: RefreshDatabase
+    environment: ${{ parameters.environment }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
 
-- ${{ if eq(parameters.operation, 'Backup') }}:
-  - task: PublishPipelineArtifact@1
-    inputs:
-      targetPath: '$(Build.ArtifactStagingDirectory)'
-      artifact: 'DatabaseBackup'
-      publishLocation: 'pipeline' 
+          - task: PowerShell@2
+            name: InstallSqlModule
+            inputs:
+              targetType: 'inline'
+              script: |
+                Install-Module -Name SqlServer -Force -AllowClobber -Scope CurrentUser
+
+          - task: PowerShell@2
+            name: BackupAndRestore
+            inputs:
+              filePath: '$(System.DefaultWorkingDirectory)/DatabaseRefresh.ps1'
+              arguments: >
+                -SourceInstanceName "$(sourceInstance)"
+                -SourceDatabaseName "$(SourceDatabaseName)"
+                -TargetInstanceName "$(targetInstance)"
+                -TargetDatabaseName "$(TargetDatabaseName)"
+                -BackupType CopyOnly
+                $(UseWindowsAuth)
+              errorActionPreference: 'Stop'
+            env:
+              SQL_USERNAME: $(SqlUsername)
+              SQL_PASSWORD: $(SqlPassword)
+
+- stage: Verification
+  dependsOn: DatabaseRefresh
+  condition: succeeded('DatabaseRefresh')
+  jobs:
+  - job: VerifyRefresh
+    steps:
+    - task: PowerShell@2
+      name: VerifyDatabase
+      inputs:
+        targetType: 'inline'
+        script: |
+          $query = "SELECT name, state_desc FROM sys.databases WHERE name = '$(TargetDatabaseName)'"
+          $result = Invoke-Sqlcmd -ServerInstance "$(targetInstance)" -Database "master" -Query $query
+          if ($result.state_desc -ne "ONLINE") {
+            Write-Error "Database is not in ONLINE state"
+            exit 1
+          }
+          Write-Host "Database refresh verified successfully" 
