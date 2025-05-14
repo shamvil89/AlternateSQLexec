@@ -5,6 +5,12 @@ pool:
   vmImage: 'windows-latest'
 
 parameters:
+  - name: operation
+    type: string
+    default: 'Backup'
+    values:
+      - Backup
+      - Restore
   - name: environmentName
     type: string
     default: 'Development'
@@ -12,6 +18,13 @@ parameters:
       - Development
       - Staging
       - Production
+  - name: backupType
+    type: string
+    default: 'Full'
+    values:
+      - Full
+      - Differential
+      - Log
   
 variables:
   - name: SqlServerInstance
@@ -23,10 +36,11 @@ variables:
       value: 'prod-sql-server.database.windows.net'
 
 steps:
-- task: DownloadPipelineArtifact@2
-  inputs:
-    artifactName: 'DatabaseBackup'
-    targetPath: '$(Build.ArtifactStagingDirectory)'
+- ${{ if eq(parameters.operation, 'Restore') }}:
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      artifactName: 'DatabaseBackup'
+      targetPath: '$(Build.ArtifactStagingDirectory)'
 
 - task: PowerShell@2
   inputs:
@@ -35,23 +49,44 @@ steps:
       # Convert plain text password to SecureString
       $securePassword = ConvertTo-SecureString "$(SqlPassword)" -AsPlainText -Force
       
-      # Execute restore script with secure password
-      & "$(System.DefaultWorkingDirectory)/RestoreDatabaseViaPipeline.ps1" `
-        -BackupFile "$(Build.ArtifactStagingDirectory)/database.bak" `
-        -NewDatabaseName "$(DatabaseName)" `
-        -ServerInstance "$(SqlServerInstance)" `
-        -SqlUsername "$(SqlUsername)" `
-        -SqlPassword $securePassword `
-        -DataFilePath "$(Build.ArtifactStagingDirectory)/Data" `
-        -LogFilePath "$(Build.ArtifactStagingDirectory)/Log" `
-        -OverwriteExisting `
-        -CommandTimeout 7200
+      # Set common parameters
+      $params = @{
+        Operation = "${{ parameters.operation }}"
+        DatabaseName = "$(DatabaseName)"
+        ServerInstance = "$(SqlServerInstance)"
+        SqlUsername = "$(SqlUsername)"
+        SqlPassword = $securePassword
+        CommandTimeout = 7200
+      }
+
+      # Add operation-specific parameters
+      if ("${{ parameters.operation }}" -eq "Backup") {
+        $params.BackupType = "${{ parameters.backupType }}"
+        $params.DataFilePath = "$(Build.ArtifactStagingDirectory)"
+        $params.Description = "Pipeline backup from ${{ parameters.environmentName }} environment"
+      }
+      else {
+        $params.BackupFile = "$(Build.ArtifactStagingDirectory)/database.bak"
+        $params.DataFilePath = "$(Build.ArtifactStagingDirectory)/Data"
+        $params.LogFilePath = "$(Build.ArtifactStagingDirectory)/Log"
+        $params.OverwriteExisting = $true
+      }
+      
+      # Execute the script with parameters
+      & "$(System.DefaultWorkingDirectory)/RestoreDatabaseViaPipeline.ps1" @params
       
       if ($LASTEXITCODE -ne 0) {
-        Write-Error "Database restore failed with exit code $LASTEXITCODE"
+        Write-Error "Database operation failed with exit code $LASTEXITCODE"
         exit $LASTEXITCODE
       }
   env:
     SqlPassword: $(SqlPassword) # Secure way to pass password
-  displayName: 'Restore Database'
-  condition: succeeded() 
+  displayName: '${{ parameters.operation }} Database'
+  condition: succeeded()
+
+- ${{ if eq(parameters.operation, 'Backup') }}:
+  - task: PublishPipelineArtifact@1
+    inputs:
+      targetPath: '$(Build.ArtifactStagingDirectory)'
+      artifact: 'DatabaseBackup'
+      publishLocation: 'pipeline' 
