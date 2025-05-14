@@ -73,4 +73,34 @@ coverage/
 ._*
 .Spotlight-V100
 .Trashes
-ehthumbs.db 
+ehthumbs.db
+
+# SQL Server files
+*.mdf
+*.ldf
+*.ndf
+*.bak
+*.trn
+
+# PowerShell
+*.ps1.log
+*.psm1.log
+*.psd1.log
+
+# Credentials and secrets
+*.pfx
+*.key
+*.pem
+*.cer
+*.pvk
+*.password
+*.credentials
+
+# Backup files
+backup/
+*.bak
+*.backup
+
+# Environment files
+.env
+.env.* 
