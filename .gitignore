@@ -26,9 +26,9 @@ out/
 .env.*.local
 
 # PowerShell
+*.ps1.config
 *.ps1.credentials
-*.pfx
-*.cer
+*.log
 
 # SQL Server
 *.mdf
@@ -55,6 +55,7 @@ Desktop.ini
 # Backup files
 *.bak
 *.backup
+*.old
 
 # User-specific files
 *.userprefs
@@ -103,4 +104,8 @@ backup/
 
 # Environment files
 .env
-.env.* 
+.env.*
+
+# macOS
+.AppleDouble
+.LSOverride 

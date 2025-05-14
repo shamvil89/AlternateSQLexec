@@ -19,8 +19,9 @@ function Initialize-Configuration {
     Write-Host "--------------------------------"
     $script:config.InventoryServer = Read-Host "Enter the SQL Server instance where inventory database is hosted (e.g., ServerName\InstanceName)"
     
-    # Test connection to inventory database
+    # First try Windows Authentication with default database
     try {
+        Write-Host "Attempting Windows Authentication..."
         $testParams = @{
             ServerInstance = $script:config.InventoryServer
             Database = $script:config.InventoryDatabase
@@ -33,8 +34,100 @@ function Initialize-Configuration {
         Write-Host "SQL Server Version: $($result.Version)"
     }
     catch {
-        Write-Error "Failed to connect to inventory database: $_"
-        exit 1
+        Write-Host "Windows Authentication failed or database not found. Trying alternative options..." -ForegroundColor Yellow
+        
+        # Try SQL Authentication
+        try {
+            # Prompt for SQL credentials
+            $sqlUsername = Read-Host "Enter SQL Server username"
+            $sqlPassword = Read-Host "Enter SQL Server password" -AsSecureString
+            
+            # Convert SecureString to plain text for connection
+            $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sqlPassword)
+            $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+            [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+
+            # First, test connection to master database with enhanced connection parameters
+            $testParams = @{
+                ServerInstance = $script:config.InventoryServer
+                Database = "master"
+                Username = $sqlUsername
+                Password = $plainPassword
+                Query = "SELECT @@VERSION AS Version"
+                ErrorAction = "Stop"
+                TrustServerCertificate = $true
+                ConnectionTimeout = 30
+                QueryTimeout = 30
+            }
+            
+            Write-Host "Testing connection to SQL Server..." -ForegroundColor Yellow
+            try {
+                $result = Invoke-Sqlcmd @testParams
+                Write-Host "Successfully connected to SQL Server using SQL Authentication" -ForegroundColor Green
+                Write-Host "SQL Server Version: $($result.Version)"
+            }
+            catch {
+                Write-Host "Initial connection failed, trying with encryption..." -ForegroundColor Yellow
+                # Create a new connection string with encryption
+                $connString = "Server=$($script:config.InventoryServer);Database=master;User Id=$sqlUsername;Password=$plainPassword;TrustServerCertificate=True;Encrypt=True;"
+                $testParams.Add("ConnectionString", $connString)
+                $result = Invoke-Sqlcmd @testParams
+            }
+
+            # Get list of available databases with same connection parameters
+            Write-Host "Retrieving available databases..." -ForegroundColor Yellow
+            $dbListQuery = "SELECT name FROM sys.databases WHERE database_id > 4 ORDER BY name"  # Skip system databases
+            $dbParams = $testParams.Clone()
+            $dbParams.Query = $dbListQuery
+            
+            $databases = Invoke-Sqlcmd @dbParams
+
+            if ($databases.Count -eq 0) {
+                Write-Host "No user databases found on the server." -ForegroundColor Red
+                throw "No available databases to connect to."
+            }
+
+            # Display available databases
+            Write-Host "`nAvailable databases:" -ForegroundColor Cyan
+            $databases | ForEach-Object { Write-Host " - $($_.name)" }
+
+            # Prompt for database selection immediately after successful SQL auth
+            do {
+                $selectedDb = Read-Host "`nEnter the name of the database you want to use for inventory"
+                if ($selectedDb -in $databases.name) {
+                    break
+                }
+                Write-Host "Invalid database name. Please choose from the list above." -ForegroundColor Yellow
+            } while ($true)
+
+            # Test connection to selected database with same parameters
+            if ($testParams.ContainsKey("ConnectionString")) {
+                $testParams.ConnectionString = $connString -replace "Database=master", "Database=$selectedDb"
+            } else {
+                $testParams.Database = $selectedDb
+            }
+            Write-Host "Testing connection to selected database '$selectedDb'..." -ForegroundColor Yellow
+            $result = Invoke-Sqlcmd @testParams
+
+            # Store credentials and connection settings in script config
+            $script:config.SqlUsername = $sqlUsername
+            $script:config.SqlPassword = $plainPassword
+            $script:config.UseSqlAuth = $true
+            $script:config.InventoryDatabase = $selectedDb
+            $script:config.ConnectionTimeout = 30
+            $script:config.QueryTimeout = 30
+            $script:config.UseEncryption = $testParams.ContainsKey("ConnectionString")
+
+            Write-Host "Successfully connected to database '$selectedDb'" -ForegroundColor Green
+
+            # Clear sensitive data from memory
+            $plainPassword = $null
+            [System.GC]::Collect()
+        }
+        catch {
+            Write-Error "Failed to connect to database: $_"
+            exit 1
+        }
     }
 }
 
@@ -177,6 +270,12 @@ try {
                 Query = $query
                 ErrorAction = "Stop"
                 TrustServerCertificate = $true
+            }
+
+            # Add SQL Authentication parameters if configured
+            if ($script:config.UseSqlAuth) {
+                $connectionParams.Username = $script:config.SqlUsername
+                $connectionParams.Password = $script:config.SqlPassword
             }
             
             $result = Invoke-Sqlcmd @connectionParams
